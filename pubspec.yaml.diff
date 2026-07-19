@@ -1,0 +1,21 @@
+# DIFF À APPLIQUER À pubspec.yaml
+# Cherchez la section "dependencies:" et AJOUTEZ ces lignes
+
+# AVANT (ce qui existe)
+dependencies:
+  flutter:
+    sdk: flutter
+  supabase_flutter: ^1.10.0
+  image_picker: ^0.8.7
+
+# APRÈS (nouvelle dépendance)
+dependencies:
+  flutter:
+    sdk: flutter
+  supabase_flutter: ^1.10.0
+  image_picker: ^0.8.7
+  flutter_riverpod: ^2.4.0  # ← AJOUTER CETTE LIGNE
+  riverpod: ^2.4.0          # ← AJOUTER CETTE LIGNE
+
+# Puis exécutez :
+# flutter pub get
