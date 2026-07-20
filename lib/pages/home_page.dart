@@ -1,18 +1,17 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/article.dart';
-import '../providers/article_providers.dart';
 import 'detail_page.dart';
 import 'dart:developer' as developer;
 
-class HomePage extends ConsumerStatefulWidget {
+class HomePage extends StatefulWidget {
   const HomePage({super.key});
 
   @override
-  ConsumerState<HomePage> createState() => _HomePageState();
+  State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends ConsumerState<HomePage> {
+class _HomePageState extends State<HomePage> {
   late ScrollController _scrollController;
   int _currentPage = 0;
   bool _isLoadingMore = false;
@@ -51,7 +50,7 @@ class _HomePageState extends ConsumerState<HomePage> {
     super.dispose();
   }
 
-  /// Écoute le scroll pour pagination infinie
+  /// Écoute le scroll pour la pagination
   void _onScroll() {
     if (_scrollController.position.pixels >=
             _scrollController.position.maxScrollExtent - 500 &&
@@ -81,22 +80,18 @@ class _HomePageState extends ConsumerState<HomePage> {
     });
   }
 
+  /// Construit la requête Stream Supabase directe
+  Stream<List<Map<String, dynamic>>> _getArticlesStream() {
+    var query = Supabase.instance.client
+        .from('articles')
+        .stream(primaryKey: ['id'])
+        .order('created_at', ascending: false);
+
+    return query;
+  }
+
   @override
   Widget build(BuildContext context) {
-    // Détermine les providers à utiliser selon si recherche active
-    final isSearching = _searchController.text.isNotEmpty ||
-        _selectedCategory != null ||
-        (_selectedCity != null && _selectedCity != "Toutes les villes");
-
-    final articlesAsync = isSearching
-        ? ref.watch(articlesSearchProvider((
-            _searchController.text.isEmpty ? null : _searchController.text,
-            _selectedCategory,
-            _selectedCity == "Toutes les villes" ? null : _selectedCity,
-            _currentPage,
-          )))
-        : ref.watch(articlesListProvider(_currentPage));
-
     return Scaffold(
       backgroundColor: const Color(0xFFF5F3EE),
       appBar: _buildAppBar(),
@@ -104,9 +99,88 @@ class _HomePageState extends ConsumerState<HomePage> {
         children: [
           _buildFiltersSection(),
           Expanded(
-            child: articlesAsync.when(
-              data: (articles) {
+            child: StreamBuilder<List<Map<String, dynamic>>>(
+              stream: _getArticlesStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(
+                    child: CircularProgressIndicator(
+                      valueColor: AlwaysStoppedAnimation<Color>(
+                        Color(0xFFD4AF37),
+                      ),
+                    ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.error_outline,
+                            size: 80,
+                            color: Colors.red.shade300,
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            'Erreur de chargement',
+                            style: TextStyle(
+                              fontSize: 18,
+                              color: Colors.red.shade600,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          Text(
+                            snapshot.error.toString(),
+                            textAlign: TextAlign.center,
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.grey.shade600,
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => setState(() {}),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: const Color(0xFF1F2937),
+                              foregroundColor: const Color(0xFFD4AF37),
+                            ),
+                            child: const Text('Réessayer'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                final rawData = snapshot.data ?? [];
+                
+                // Conversion Map vers Model Article
+                var articles = rawData.map((map) => Article.fromMap(map)).toList();
+
+                // Filtrage en mémoire (Recherche, Catégorie, Ville)
+                if (_searchController.text.isNotEmpty) {
+                  final query = _searchController.text.toLowerCase();
+                  articles = articles.where((a) => a.nom.toLowerCase().contains(query)).toList();
+                }
+
+                if (_selectedCategory != null) {
+                  articles = articles.where((a) => a.categorie == _selectedCategory).toList();
+                }
+
+                if (_selectedCity != null && _selectedCity != "Toutes les villes") {
+                  articles = articles.where((a) => a.ville == _selectedCity).toList();
+                }
+
                 if (articles.isEmpty) {
+                  final isSearching = _searchController.text.isNotEmpty ||
+                      _selectedCategory != null ||
+                      (_selectedCity != null && _selectedCity != "Toutes les villes");
+
                   return Center(
                     child: Padding(
                       padding: const EdgeInsets.all(24.0),
@@ -151,9 +225,11 @@ class _HomePageState extends ConsumerState<HomePage> {
                     if (index == articles.length) {
                       return const Padding(
                         padding: EdgeInsets.all(16.0),
-                        child: CircularProgressIndicator(
-                          valueColor: AlwaysStoppedAnimation<Color>(
-                            Color(0xFFD4AF37),
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation<Color>(
+                              Color(0xFFD4AF37),
+                            ),
                           ),
                         ),
                       );
@@ -164,55 +240,6 @@ class _HomePageState extends ConsumerState<HomePage> {
                   },
                 );
               },
-              loading: () => const Center(
-                child: CircularProgressIndicator(
-                  valueColor: AlwaysStoppedAnimation<Color>(
-                    Color(0xFFD4AF37),
-                  ),
-                ),
-              ),
-              error: (error, stackTrace) => Center(
-                child: Padding(
-                  padding: const EdgeInsets.all(24.0),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(
-                        Icons.error_outline,
-                        size: 80,
-                        color: Colors.red.shade300,
-                      ),
-                      const SizedBox(height: 16),
-                      Text(
-                        'Erreur de chargement',
-                        style: TextStyle(
-                          fontSize: 18,
-                          color: Colors.red.shade600,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        error.toString(),
-                        textAlign: TextAlign.center,
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: Colors.grey.shade600,
-                        ),
-                      ),
-                      const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () => ref.refresh(articlesListProvider(0)),
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: const Color(0xFF1F2937),
-                          foregroundColor: const Color(0xFFD4AF37),
-                        ),
-                        child: const Text('Réessayer'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
             ),
           ),
         ],
@@ -249,7 +276,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           // Barre de recherche
           TextField(
             controller: _searchController,
-            onChanged: (_) => _resetSearch(),
+            onChanged: (_) => setState(() {}),
             decoration: InputDecoration(
               hintText: 'Rechercher un article...',
               hintStyle: TextStyle(color: Colors.grey.shade500),
@@ -368,7 +395,7 @@ class _HomePageState extends ConsumerState<HomePage> {
         ),
         decoration: BoxDecoration(
           color: isActive
-              ? const Color(0xFFD4AF37).withOpacity(0.2)
+              ? const Color(0xFFD4AF37).withValues(alpha: 0.2)
               : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
@@ -548,7 +575,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           borderRadius: BorderRadius.circular(12),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.08),
+              color: Colors.black.withValues(alpha: 0.08),
               blurRadius: 8,
               offset: const Offset(0, 2),
             ),
@@ -599,8 +626,8 @@ class _HomePageState extends ConsumerState<HomePage> {
                     ),
                     decoration: BoxDecoration(
                       color: estTerminee
-                          ? Colors.red.withOpacity(0.9)
-                          : const Color(0xFFD4AF37).withOpacity(0.9),
+                          ? Colors.red.withValues(alpha: 0.9)
+                          : const Color(0xFFD4AF37).withValues(alpha: 0.9),
                       borderRadius: BorderRadius.circular(16),
                     ),
                     child: Text(
@@ -628,7 +655,7 @@ class _HomePageState extends ConsumerState<HomePage> {
                       vertical: 2,
                     ),
                     decoration: BoxDecoration(
-                      color: const Color(0xFFD4AF37).withOpacity(0.1),
+                      color: const Color(0xFFD4AF37).withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(4),
                     ),
                     child: Text(
